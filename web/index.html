@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oddtoon Uploader</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">▶</span> Oddtoon <b>Uploader</b></div>
+  <div class="account" id="account"></div>
+</header>
+
+<nav class="sidebar">
+  <div class="channel-card" id="channelCard"></div>
+  <a href="#dashboard" data-view="dashboard"><i>◧</i>Dashboard</a>
+  <a href="#content" data-view="content"><i>▤</i>Content</a>
+  <a href="#calendar" data-view="calendar"><i>▦</i>Schedule</a>
+  <a href="#insights" data-view="insights"><i>▥</i>Insights</a>
+  <a href="#settings" data-view="settings"><i>⚙</i>Settings</a>
+</nav>
+
+<main id="main">
+  <section id="view-dashboard" class="view"></section>
+  <section id="view-content" class="view"></section>
+  <section id="view-calendar" class="view"></section>
+  <section id="view-insights" class="view"></section>
+  <section id="view-settings" class="view"></section>
+</main>
+
+<div class="modal" id="details" hidden>
+  <div class="dialog">
+    <div class="dialog-head">
+      <h2 id="dTitle">Video details</h2>
+      <button class="icon" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="form">
+        <h3>Details</h3>
+        <label class="field">
+          <span>Title (required) <em class="count" id="cTitle"></em></span>
+          <textarea id="fTitle" rows="2" maxlength="150" placeholder="Add a title that describes your video"></textarea>
+        </label>
+        <label class="field">
+          <span>Description <em class="count" id="cDesc"></em></span>
+          <textarea id="fDesc" rows="9" placeholder="Tell viewers about your video"></textarea>
+          <button type="button" class="link" id="useTemplate">Insert description template</button>
+        </label>
+
+        <h4>Thumbnail</h4>
+        <p class="hint">JPG or PNG under 2 MB. Custom thumbnails need a phone-verified channel; Shorts mostly use a frame.</p>
+        <div class="thumb-row">
+          <label class="thumb-pick"><input type="file" id="fThumb" accept=".jpg,.jpeg,.png" hidden><span>＋ Upload thumbnail</span></label>
+          <img id="thumbPreview" alt="" hidden>
+        </div>
+
+        <h4>Audience</h4>
+        <p class="hint">Is this video made for kids? Required by law (COPPA).</p>
+        <label class="radio"><input type="radio" name="kids" value="no"> No, it's not made for kids</label>
+        <label class="radio"><input type="radio" name="kids" value="yes"> Yes, it's made for kids</label>
+
+        <h4>Altered content</h4>
+        <p class="hint">Does it show realistic-looking people, places or events that were made or changed with AI? Cartoons and clearly unrealistic animation don't count.</p>
+        <label class="radio"><input type="radio" name="synth" value="no"> No</label>
+        <label class="radio"><input type="radio" name="synth" value="yes"> Yes</label>
+
+        <h4>Tags <em class="count" id="cTags"></em></h4>
+        <p class="hint">A few accurate tags help with misspellings. Press Enter or comma to add.</p>
+        <div class="chips" id="tagBox"><input id="fTag" placeholder="Add tag"></div>
+
+        <h4>Category</h4>
+        <select id="fCat"></select>
+
+        <h3>Visibility</h3>
+        <div class="vis">
+          <label class="radio"><input type="radio" name="vis" value="private"> Private</label>
+          <label class="radio"><input type="radio" name="vis" value="unlisted"> Unlisted</label>
+          <label class="radio"><input type="radio" name="vis" value="public"> Public</label>
+          <label class="radio"><input type="radio" name="vis" value="schedule"> Schedule</label>
+          <div class="schedule-box" id="schedBox">
+            <input type="datetime-local" id="fWhen">
+            <button type="button" class="ghost" id="nextSlot">Next free slot</button>
+            <div class="hint" id="whenHint"></div>
+          </div>
+          <label class="check"><input type="checkbox" id="fNotify"> Notify subscribers</label>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="preview">
+          <video id="pv" controls preload="metadata"></video>
+          <div class="pv-meta">
+            <div><small>Filename</small><div id="pvName"></div></div>
+            <div><small>Format</small><div id="pvFmt"></div></div>
+          </div>
+        </div>
+        <div class="checks">
+          <h4>Checks</h4>
+          <ul id="checkList"></ul>
+        </div>
+      </aside>
+    </div>
+    <div class="dialog-foot">
+      <span class="save-state" id="saveState"></span>
+      <button class="ghost" data-close>Close</button>
+      <button class="primary" id="saveBtn">Save</button>
+      <button class="primary blue" id="saveUpload">Save &amp; upload</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
