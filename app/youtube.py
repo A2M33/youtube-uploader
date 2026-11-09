@@ -10,6 +10,10 @@ from zoneinfo import ZoneInfo
 from . import library as lib
 from .policy import check, has_errors
 
+# A dead connection must raise and retry, not hang forever (seen 2026-11-09: resets left an upload
+# stuck at 0 % with no socket open). httplib2 has no timeout of its own.
+socket.setdefaulttimeout(90)
+
 CRED_DIR = lib.BASE / "credentials"
 CLIENT_SECRET = CRED_DIR / "client_secret.json"
 TOKEN_FILE = CRED_DIR / "token.json"
@@ -78,7 +82,10 @@ def services():
     if _client_cache.get("key") != key:
         _client_cache.update(
             key=key,
-            yt=build("youtube", "v3", credentials=creds, cache_discovery=False),
+            # www.googleapis.com, not the default youtube.googleapis.com: on this network the latter's
+            # connections get reset (WinError 10054) while www.googleapis.com stays reachable.
+            yt=build("youtube", "v3", credentials=creds, cache_discovery=False,
+                     client_options={"api_endpoint": "https://www.googleapis.com/"}),
             ya=build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False),
         )
     return _client_cache["yt"], _client_cache["ya"]
@@ -392,10 +399,10 @@ class QuotaExhausted(Exception):
 
 def _backoff(name: str, retry: int, err) -> int:
     retry += 1
-    if retry > 8:
+    if retry > 12:
         raise err
     wait = min(2 ** retry, 60)
-    lib.update_state(name, error=f"Network hiccup, retrying in {wait}s ({retry}/8)")
+    lib.update_state(name, error=f"Network hiccup, retrying in {wait}s ({retry}/12)")
     time.sleep(wait)
     return retry
 

@@ -22,6 +22,20 @@ from .schedule import next_slots
 EXIT_OK, EXIT_FAIL, EXIT_SETUP, EXIT_QUOTA = 0, 1, 2, 3
 
 
+def _blocked(st: dict) -> bool:
+    """True if a video is uploaded or an upload is really in progress. An "uploading" entry with no
+    youtube_id that started over 20 minutes ago is a dead run (process killed / network loss): allow a retry."""
+    if st.get("status") == "done" or st.get("youtube_id"):
+        return True
+    if st.get("status") != "uploading":
+        return False
+    try:
+        t0 = datetime.fromisoformat(str(st.get("started_at", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - t0).total_seconds() < 20 * 60
+
+
 class CliError(Exception):
     def __init__(self, msg: str, code: int = EXIT_FAIL, **extra):
         super().__init__(msg)
@@ -160,7 +174,7 @@ def _checks(name: str, meta: dict) -> list[dict]:
 
 def _apply(name: str, a, online: bool) -> dict:
     st = lib.get_state().get(name, {})
-    if st.get("status") in ("uploading", "done"):
+    if _blocked(st):
         raise CliError(f"{name} is already uploaded; edit it in YouTube Studio.",
                        youtube_id=st.get("youtube_id"))
     changes = _meta_changes(a)
@@ -253,7 +267,7 @@ def cmd_check(a):
 def cmd_schedule(a):
     names = [_resolve(v, import_file=True) for v in a.videos]
     for n in names:
-        if lib.get_state().get(n, {}).get("status") in ("uploading", "done"):
+        if _blocked(lib.get_state().get(n, {})):
             raise CliError(f"{n} is already uploaded.")
     slots = _auto_slot(names, online=True)
     for n, slot in zip(names, slots):
