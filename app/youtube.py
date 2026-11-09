@@ -56,7 +56,7 @@ def _load_creds():
         return None
     creds = google.oauth2.credentials.Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
     if not set(SCOPES) <= set(creds.scopes or []):
-        return None  # token from an older scope set (e.g. the ZorvoST uploader)
+        return None  # token from an older scope set (e.g. the legacy upload-only script)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             try:
@@ -92,28 +92,37 @@ def auth_status() -> dict:
     return {"state": "connected" if _load_creds() else "disconnected", "error": _auth["error"]}
 
 
+def sign_in(on_url=None) -> None:
+    """Run the Google consent flow and save the token. Blocks until the user
+    finishes in the browser (5 minute timeout). Raises on failure."""
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    class Flow(InstalledAppFlow):
+        def authorization_url(self, **kw):
+            url, state = super().authorization_url(**kw)
+            _auth["url"] = url  # shown in the UI in case the browser didn't open
+            if on_url:
+                on_url(url)
+            return url, state
+
+    flow = Flow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
+    creds = flow.run_local_server(port=0, open_browser=True, browser=_browser(),
+                                  timeout_seconds=300, prompt="consent", access_type="offline")
+    CRED_DIR.mkdir(parents=True, exist_ok=True)
+    TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+    _client_cache.clear()
+    _channel_cache.clear()
+
+
 def connect() -> None:
-    """Open the Google consent page in the browser; runs in a background thread."""
+    """Start sign_in() in a background thread (used by the web UI)."""
     if _auth["state"] == "connecting":
         return
 
     def run():
-        from google_auth_oauthlib.flow import InstalledAppFlow
-
-        class Flow(InstalledAppFlow):
-            def authorization_url(self, **kw):
-                url, state = super().authorization_url(**kw)
-                _auth["url"] = url  # shown in the UI in case the browser didn't open
-                return url, state
-
         try:
-            flow = Flow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
-            creds = flow.run_local_server(port=0, open_browser=True, browser=_browser(),
-                                          timeout_seconds=300, prompt="consent", access_type="offline")
-            CRED_DIR.mkdir(parents=True, exist_ok=True)
-            TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+            sign_in()
             _auth.update(state="idle", error=None)
-            _channel_cache.clear()
         except Exception as e:  # user closed the tab, timeout, denied, ...
             _auth.update(state="idle", error=str(e) or type(e).__name__)
 
@@ -286,7 +295,7 @@ class Uploader:
                 time.sleep(1)
             self.current = name
             try:
-                self._upload(name)
+                upload_video(name)
             except QuotaExhausted as e:
                 lib.update_state(name, status="failed", error=str(e))
                 self.paused = True
@@ -295,80 +304,86 @@ class Uploader:
             finally:
                 self.current = None
 
-    def _upload(self, name: str) -> None:
-        from googleapiclient.errors import HttpError
-        from googleapiclient.http import MediaFileUpload
 
-        meta = lib.get_meta(name)
-        problems = check(meta)
-        if has_errors(problems):
-            raise RuntimeError("Fix the errors first: " + "; ".join(
-                p["msg"] for p in problems if p["level"] == "error"))
-        if quota_used() + COST["insert"] > DAILY_QUOTA:
-            raise QuotaExhausted("Daily API quota is used up; it resets at midnight Pacific time.")
+def upload_video(name: str, on_progress=None) -> dict:
+    """Upload one video from the library synchronously and return its final state entry."""
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaFileUpload
 
-        yt, _ = services()
-        status = {
-            "selfDeclaredMadeForKids": bool(meta["made_for_kids"]),
-            "containsSyntheticMedia": bool(meta["synthetic_media"]),
-        }
-        if meta.get("publish_at"):
-            status.update(privacyStatus="private", publishAt=meta["publish_at"])
-        else:
-            status["privacyStatus"] = meta.get("privacy") or "public"
-        body = {
-            "snippet": {
-                "title": meta["title"].strip(),
-                "description": meta["description"],
-                "tags": [t for t in meta["tags"] if t.strip()],
-                "categoryId": str(meta["category_id"]),
-            },
-            "status": status,
-        }
-        media = MediaFileUpload(str(lib.video_path(name)), chunksize=8 * 1024 * 1024, resumable=True)
-        req = yt.videos().insert(part="snippet,status", body=body, media_body=media,
-                                 notifySubscribers=bool(meta.get("notify_subscribers", True)))
-        lib.update_state(name, status="uploading", progress=0, started_at=lib.iso(lib.now_utc()))
+    meta = lib.get_meta(name)
+    problems = check(meta)
+    if has_errors(problems):
+        raise RuntimeError("Fix the errors first: " + "; ".join(
+            p["msg"] for p in problems if p["level"] == "error"))
+    if quota_used() + COST["insert"] > DAILY_QUOTA:
+        raise QuotaExhausted("Daily API quota is used up; it resets at midnight Pacific time.")
 
-        response, retry = None, 0
-        while response is None:
-            try:
-                prog, response = req.next_chunk()
-                if prog:
-                    lib.update_state(name, progress=round(prog.progress() * 100, 1))
-                retry = 0
-            except HttpError as e:
-                reason = _reason(e)
-                if reason in ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceeded"):
-                    raise QuotaExhausted(f"YouTube refused the upload: {reason}.")
-                if e.resp.status not in RETRIABLE_STATUS:
-                    raise
-                retry = _backoff(name, retry, e)
-            except (socket.error, ConnectionError, TimeoutError) as e:
-                retry = _backoff(name, retry, e)
-        _spend("insert")
+    yt, _ = services()
+    status = {
+        "selfDeclaredMadeForKids": bool(meta["made_for_kids"]),
+        "containsSyntheticMedia": bool(meta["synthetic_media"]),
+    }
+    if meta.get("publish_at"):
+        status.update(privacyStatus="private", publishAt=meta["publish_at"])
+    else:
+        status["privacyStatus"] = meta.get("privacy") or "public"
+    body = {
+        "snippet": {
+            "title": meta["title"].strip(),
+            "description": meta["description"],
+            "tags": [t for t in meta["tags"] if t.strip()],
+            "categoryId": str(meta["category_id"]),
+        },
+        "status": status,
+    }
+    media = MediaFileUpload(str(lib.video_path(name)), chunksize=8 * 1024 * 1024, resumable=True)
+    req = yt.videos().insert(part="snippet,status", body=body, media_body=media,
+                             notifySubscribers=bool(meta.get("notify_subscribers", True)))
+    lib.update_state(name, status="uploading", progress=0, started_at=lib.iso(lib.now_utc()))
 
-        vid = response["id"]
-        warnings = []
-        got = response.get("status", {})
-        wanted_public = meta.get("publish_at") or status["privacyStatus"] != "private"
-        if wanted_public and got.get("privacyStatus") == "private" and not got.get("publishAt"):
-            warnings.append("YouTube locked this video to Private. The API project needs to pass "
-                            "the YouTube API audit before uploads can be public or scheduled.")
+    response, retry = None, 0
+    while response is None:
+        try:
+            prog, response = req.next_chunk()
+            if prog:
+                pct = round(prog.progress() * 100, 1)
+                lib.update_state(name, progress=pct)
+                if on_progress:
+                    on_progress(pct)
+            retry = 0
+        except HttpError as e:
+            reason = _reason(e)
+            if reason in ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceeded"):
+                raise QuotaExhausted(f"YouTube refused the upload: {reason}.")
+            if e.resp.status not in RETRIABLE_STATUS:
+                raise
+            retry = _backoff(name, retry, e)
+        except (socket.error, ConnectionError, TimeoutError) as e:
+            retry = _backoff(name, retry, e)
+    _spend("insert")
 
-        thumb = lib.thumbnail_for(name)
-        if thumb:
-            try:
-                yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb))).execute()
-                _spend("thumbnail")
-            except HttpError as e:
-                warnings.append("Thumbnail not set: " + _err_text(e) +
-                                " (custom thumbnails need a phone-verified channel).")
+    vid = response["id"]
+    warnings = []
+    got = response.get("status", {})
+    wanted_public = meta.get("publish_at") or status["privacyStatus"] != "private"
+    if wanted_public and got.get("privacyStatus") == "private" and not got.get("publishAt"):
+        warnings.append("YouTube locked this video to Private. The API project needs to pass "
+                        "the YouTube API audit before uploads can be public or scheduled.")
 
-        lib.update_state(name, status="done", progress=100, youtube_id=vid,
-                         uploaded_at=lib.iso(lib.now_utc()),
-                         result_privacy=got.get("privacyStatus"), result_publish_at=got.get("publishAt"),
-                         warnings=warnings, error=None)
+    thumb = lib.thumbnail_for(name)
+    if thumb:
+        try:
+            yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb))).execute()
+            _spend("thumbnail")
+        except HttpError as e:
+            warnings.append("Thumbnail not set: " + _err_text(e) +
+                            " (custom thumbnails need a phone-verified channel).")
+
+    return lib.update_state(name, status="done", progress=100, youtube_id=vid,
+                            uploaded_at=lib.iso(lib.now_utc()),
+                            result_privacy=got.get("privacyStatus"),
+                            result_publish_at=got.get("publishAt"),
+                            warnings=warnings, error=None)
 
 
 class QuotaExhausted(Exception):

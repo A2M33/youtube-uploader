@@ -1,4 +1,4 @@
-"""Video library: files in Video&Caption/, per-video metadata sidecars, upload state."""
+"""Video library: the videos folder, per-video metadata sidecars, upload state."""
 import json
 import os
 import threading
@@ -6,8 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-# Finished shorts land in Video/Video&Caption (video + same-name .json sidecar); override with ODDTOON_VIDEOS.
-VIDEOS_DIR = Path(os.environ.get("ODDTOON_VIDEOS") or BASE.parent / "Video&Caption")
 DATA_DIR = BASE / "data"
 STATE_FILE = DATA_DIR / "state.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
@@ -16,16 +14,32 @@ VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv"}
 THUMB_EXTS = (".jpg", ".jpeg", ".png")
 
 DEFAULT_SETTINGS = {
+    "videos_dir": "",  # empty = videos/ next to the app
     "channel_tz": "America/New_York",
     "slot_times": ["15:00"],
     "category_id": "1",  # Film & Animation
     "made_for_kids": False,
-    "default_tags": ["animation", "cartoon", "history"],
-    "description_template": "{hook}\n\n{summary}\n\n#shorts #history #animation",
+    "default_tags": [],
+    "description_template": "{hook}\n\n{summary}\n\n#shorts",
     "notify_subscribers": True,
 }
 
 _lock = threading.RLock()
+
+
+def _resolve_videos_dir() -> Path:
+    """YT_UPLOADER_VIDEOS env var, then settings.videos_dir, then ./videos."""
+    raw = os.environ.get("YT_UPLOADER_VIDEOS")
+    if not raw:
+        try:
+            raw = json.loads(SETTINGS_FILE.read_text(encoding="utf-8")).get("videos_dir")
+        except (FileNotFoundError, json.JSONDecodeError):
+            raw = None
+    p = Path(raw).expanduser() if raw else BASE / "videos"
+    return p if p.is_absolute() else (BASE / p).resolve()
+
+
+VIDEOS_DIR = _resolve_videos_dir()
 
 
 def now_utc() -> datetime:
@@ -127,7 +141,7 @@ def blank_meta(name: str) -> dict:
 
 
 def parse_legacy_txt(txt: Path) -> dict:
-    """Old ZorvoST format: TITLE/TAGS/PUBLISH_AT header lines, then DESCRIPTION:."""
+    """Legacy .txt format: TITLE/TAGS/PUBLISH_AT header lines, then DESCRIPTION:."""
     text = txt.read_text(encoding="utf-8")
     meta = {}
     head, sep, desc = text.partition("DESCRIPTION:")

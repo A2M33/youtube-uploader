@@ -1,4 +1,4 @@
-"""Local web server for the Oddtoon uploader UI. Run: python -m app"""
+"""Local web server for the uploader UI. Run: python -m app"""
 import shutil
 from pathlib import Path
 
@@ -15,7 +15,7 @@ from .schedule import next_slots
 
 WEB_DIR = lib.BASE / "web"
 
-app = FastAPI(title="Oddtoon Uploader")
+app = FastAPI(title="YouTube Uploader")
 uploader = yt.Uploader()
 uploader.requeue_pending()
 
@@ -58,7 +58,7 @@ def status():
         except Exception as e:
             auth["error"] = yt._err_text(e)
     return {"auth": auth, "channel": ch, "quota_used": yt.quota_used(), "quota_limit": yt.DAILY_QUOTA,
-            "paused": uploader.paused, "current": uploader.current}
+            "paused": uploader.paused, "current": uploader.current, "videos_dir": str(lib.VIDEOS_DIR)}
 
 
 @app.post("/api/auth/connect")

@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Oddtoon Uploader - Install
+title YouTube Uploader - Install
 cd /d "%~dp0"
 where python >nul 2>nul
 if errorlevel 1 (

@@ -101,7 +101,7 @@ function renderAccount() {
 async function connect() {
   try {
     await api("/api/auth/connect", { method: "POST" });
-    toast("A Google sign-in tab opened. Pick the Oddtoon channel and allow access.", 6000);
+    toast("A Google sign-in tab opened. Pick your channel and allow access.", 6000);
     await refresh();
     schedulePoll();
   } catch (e) { toast(e.message); }
@@ -213,7 +213,7 @@ function renderContent() {
           <td>${whenCell(v)}</td>
           <td>${checkBadge(v.checks)}</td>
         </tr>`).join("")}</tbody></table>`
-      : `<div class="empty">No videos yet. Drop rendered MP4s above, or copy them into the <code>videos</code> folder.</div>`}`;
+      : `<div class="empty">No videos yet. Drop rendered MP4s above, or copy them into the videos folder (see Settings).</div>`}`;
 
   const drop = $("#drop");
   ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
@@ -514,6 +514,8 @@ function renderSettings() {
   el.innerHTML = `
     <h1>Settings</h1>
     <div class="settings">
+      <div><span class="muted">Videos folder</span><div><code>${esc(S.status.videos_dir)}</code></div>
+        <p class="hint">Change it with <code>videos_dir</code> in <code>data/settings.json</code> or the <code>YT_UPLOADER_VIDEOS</code> environment variable, then restart.</p></div>
       <label><span>Audience time zone</span>
         <input type="text" id="sTz" value="${esc(s.channel_tz)}" list="tzList">
         <datalist id="tzList">${["America/New_York", "America/Chicago", "America/Los_Angeles", "Europe/London", "Europe/Berlin", "Asia/Kolkata", "Asia/Tehran", "Australia/Sydney"].map((t) => `<option value="${t}">`).join("")}</datalist>
