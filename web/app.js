@@ -92,7 +92,8 @@ function renderAccount() {
     card.innerHTML = `<img src="${esc(channel.avatar)}" alt=""><div class="name">Your channel</div><div class="sub">${esc(channel.title)}</div>`;
   } else {
     const label = { connecting: "Waiting for Google sign-in…", no_client_secret: "client_secret.json missing" }[auth.state];
-    acc.innerHTML = label ? `<span class="muted">${label}</span>` : `<button class="primary blue" id="connectTop">Connect YouTube</button>`;
+    const link = auth.url ? ` <a href="${esc(auth.url)}" target="_blank" rel="noopener">Open sign-in page</a>` : "";
+    acc.innerHTML = label ? `<span class="muted">${label}</span>${link}` : `<button class="primary blue" id="connectTop">Connect YouTube</button>`;
     card.innerHTML = `<div class="name">Not connected</div><div class="sub">Sign in with the channel's Google account</div>`;
     $("#connectTop")?.addEventListener("click", connect);
   }

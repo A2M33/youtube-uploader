@@ -1,11 +1,13 @@
-"""Video library: files in videos/, per-video metadata sidecars, upload state."""
+"""Video library: files in Video&Caption/, per-video metadata sidecars, upload state."""
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-VIDEOS_DIR = BASE / "videos"
+# Finished shorts land in Video/Video&Caption (video + same-name .json sidecar); override with ODDTOON_VIDEOS.
+VIDEOS_DIR = Path(os.environ.get("ODDTOON_VIDEOS") or BASE.parent / "Video&Caption")
 DATA_DIR = BASE / "data"
 STATE_FILE = DATA_DIR / "state.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"

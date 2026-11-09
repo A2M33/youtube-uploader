@@ -25,7 +25,7 @@ COST = {"insert": 1600, "thumbnail": 50, "read": 1}
 RETRIABLE_STATUS = {500, 502, 503, 504}
 PACIFIC = ZoneInfo("America/Los_Angeles")  # YouTube quota resets at midnight Pacific
 
-_auth = {"state": "idle", "error": None}
+_auth = {"state": "idle", "error": None, "url": None}
 _client_cache = {}
 
 
@@ -99,10 +99,17 @@ def connect() -> None:
 
     def run():
         from google_auth_oauthlib.flow import InstalledAppFlow
+
+        class Flow(InstalledAppFlow):
+            def authorization_url(self, **kw):
+                url, state = super().authorization_url(**kw)
+                _auth["url"] = url  # shown in the UI in case the browser didn't open
+                return url, state
+
         try:
-            flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
-            creds = flow.run_local_server(port=0, open_browser=True, timeout_seconds=300,
-                                          prompt="consent", access_type="offline")
+            flow = Flow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
+            creds = flow.run_local_server(port=0, open_browser=True, browser=_browser(),
+                                          timeout_seconds=300, prompt="consent", access_type="offline")
             CRED_DIR.mkdir(parents=True, exist_ok=True)
             TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
             _auth.update(state="idle", error=None)
@@ -110,8 +117,22 @@ def connect() -> None:
         except Exception as e:  # user closed the tab, timeout, denied, ...
             _auth.update(state="idle", error=str(e) or type(e).__name__)
 
-    _auth.update(state="connecting", error=None)
+    _auth.update(state="connecting", error=None, url=None)
     threading.Thread(target=run, daemon=True).start()
+
+
+def _browser() -> str | None:
+    """Prefer Chrome for the Google sign-in page (it holds the channel's Google session)."""
+    import os
+    import webbrowser
+    for path in (r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
+                 r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
+                 r"%LocalAppData%\Google\Chrome\Application\chrome.exe"):
+        exe = os.path.expandvars(path)
+        if os.path.exists(exe):
+            webbrowser.register("chrome-local", None, webbrowser.BackgroundBrowser(exe))
+            return "chrome-local"
+    return None  # default browser
 
 
 def disconnect() -> None:
